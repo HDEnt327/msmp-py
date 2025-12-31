@@ -9,7 +9,7 @@ from websockets.exceptions import ConnectionClosed
 import json
 from pathlib import Path
 
-# ===== Config (read from .env if present) =====
+# config
 cfg = get_driver().config
 MSMP_URI: str = getattr(cfg, "msmp_uri")
 MSMP_SECRET: str = getattr(cfg, "msmp_secret")
@@ -30,7 +30,7 @@ DATA_FILE = Path(__file__).parent / "whitelist.json"
 sslctx = ssl.create_default_context(cafile=MSMP_SSL_PEM)
 sslctx.check_hostname = False  # self-signed / host mismatch
 
-# ===== Minimal reusable MSMP client (single-file) =====
+# msmp client
 Json = Dict[str, Any]
 NotifHandler = Callable[[Json], Awaitable[None]]
 
@@ -123,7 +123,6 @@ driver = get_driver()
 async def _startup():
     load_whitelist_data()
     await msmp.start()
-    # If your server requires explicit subscription RPCs, do them here:
     # await msmp.call("minecraft:notification/players/joined")
     # await msmp.call("minecraft:notification/players/left")
     msmp.on("minecraft:notification/players/joined", _on_join)
@@ -142,7 +141,7 @@ def load_whitelist_data() -> None:
         return
     with DATA_FILE.open("r", encoding="utf-8") as f:
         raw = json.load(f)
-    # convert list -> set
+    # convert list to set
     USER_WHITELISTS = {
         str(uid): set(names) for uid, names in raw.items() if isinstance(names, list)
     }
@@ -195,7 +194,7 @@ async def _on_left(params):
     
     
 
-# ----- /players command -----
+# /players command
 players_cmd = on_command("players", aliases={"在线玩家", "在线列表"})
 
 @players_cmd.handle()
@@ -208,6 +207,8 @@ async def _(bot: Bot, event: Event):
         msg = f"查询失败: {e}"
     await players_cmd.finish(msg)
 
+
+# /whitelist command
 whitelist_cmd = on_command("whitelist", aliases={"白名单"})
 
 @whitelist_cmd.handle()
@@ -234,13 +235,13 @@ async def _(bot: Bot, event: Event):
             f"你已经用完白名单名额（{WHITELIST_LIMIT} 个）：{used_list}"
         )
 
-    # -------- call MSMP (single server) --------
+# call server
     try:
         await msmp.call("minecraft:allowlist/add", {"add": [{"name": name}]})
     except Exception as e:
         await whitelist_cmd.finish(f"添加白名单失败：{e}")
 
-    # -------- local record + save --------
+# add local record
     used.add(name)
     save_whitelist_data()
 
