@@ -15,7 +15,7 @@ MSMP_URI: str = getattr(cfg, "msmp_uri")
 MSMP_SECRET: str = getattr(cfg, "msmp_secret")
 MSMP_SSL_PEM: str = getattr(cfg, "msmp_ssl_pem")
 # Example .env:
-# MSMP_URI=wss://frp-fog.com:25567
+# MSMP_URI=wss://example.com:25567
 # MSMP_SECRET=YOUR_40_CHAR_SECRET
 # MSMP_SSL_PEM=server-cert.pem
 # MSMP_ALLOWED_GROUPS=["123456789","987654321"]
