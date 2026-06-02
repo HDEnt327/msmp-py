@@ -21,7 +21,7 @@ MSMP_ORIGIN: str | None = getattr(cfg, "msmp_origin", "msmp-py")
 MSMP_WHITELIST_PATH: str | None = getattr(cfg, "msmp_whitelist_path", None)
 # Example .env:
 # MSMP_REMOTE_MODE=true
-# MSMP_URI=wss://frp-fog.com:25567
+# MSMP_URI=wss://address:port
 # MSMP_SECRET=YOUR_40_CHAR_SECRET
 # MSMP_USE_TLS=true
 # MSMP_SSL_PEM=server-cert.pem
