@@ -1,6 +1,7 @@
 msmp-py
 ---
-A nonebot plugin for communicating with a Minecraft Server through the new MSMP protocol
+~~A nonebot plugin for communicating with a Minecraft Server through the new MSMP protocol~~
+msmp-py was a plugin for the MSMP protocol, and now has evolved into a general purpose Minecraft server remote management tool for myself.
 
 Example `.env`:
 
