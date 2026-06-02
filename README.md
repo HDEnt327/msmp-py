@@ -6,14 +6,14 @@ Example `.env`:
 
 ```env
 MSMP_REMOTE_MODE=true
-MSMP_URI=wss://frp-fog.com:25567
+MSMP_URI=wss://address:port
 MSMP_SECRET=YOUR_40_CHAR_SECRET
 MSMP_USE_TLS=true
 MSMP_SSL_PEM=server-cert.pem
 MSMP_ORIGIN=msmp-py
 MSMP_LOCAL_RELOAD_VIA_RCON=false
 MSMP_WHITELIST_PATH=C:\path\to\server\whitelist.json
-RCON_HOST=frp-fog.com
+RCON_HOST=address.com
 RCON_PORT=25575
 RCON_PASSWORD=YOUR_RCON_PASSWORD
 MSMP_ALLOWED_GROUPS=["123456789","987654321"]
