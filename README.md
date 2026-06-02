@@ -29,6 +29,29 @@ In local whitelist mode, `MSMP_WHITELIST_PATH` must point to the server's whitel
 
 If you enable local reloads, set `RCON_HOST`, `RCON_PORT`, and `RCON_PASSWORD` to the server's RCON settings.
 
+`plugins/admins.json` controls who can use `/command`. Put a JSON object with QQ user IDs as keys in it, using the same shape as `plugins/whitelist.json`, for example:
+
+```json
+{
+  "123456789": [],
+  "987654321": []
+}
+```
+
+Admins can run arbitrary Minecraft commands through RCON with:
+
+```text
+/command say hello world
+```
+
+Admins can also remove a player from the whitelist with:
+
+```text
+/removewhitelist PlayerName
+```
+
+In local whitelist mode, this removes the entry from `MSMP_WHITELIST_PATH` and, if `MSMP_LOCAL_RELOAD_VIA_RCON=true`, reloads the whitelist over RCON afterward.
+
 Local whitelist mode writes entries in the Minecraft `whitelist.json` format:
 
 ```json

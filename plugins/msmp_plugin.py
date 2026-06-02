@@ -42,8 +42,10 @@ ALLOWED_GROUPS = {int(x) for x in _allowed} if _allowed else set()
 
 WHITELIST_LIMIT = 2
 USER_WHITELISTS: dict[str, set[str]] = {}
+ADMIN_USER_IDS: set[str] = set()
 
 DATA_FILE = Path(__file__).parent / "whitelist.json"
+ADMINS_FILE = Path(__file__).parent / "admins.json"
 
 def _config_bool(value: Any) -> bool:
     if isinstance(value, bool):
@@ -105,6 +107,26 @@ def _require_rcon_config(host: str | None, password: str | None) -> tuple[str, i
     return host, RCON_PORT, password
 
 
+def load_admin_data() -> None:
+    global ADMIN_USER_IDS
+    if not ADMINS_FILE.is_file() or ADMINS_FILE.stat().st_size == 0:
+        ADMIN_USER_IDS = set()
+        return
+
+    with ADMINS_FILE.open("r", encoding="utf-8") as f:
+        raw = json.load(f)
+
+    if isinstance(raw, list):
+        ADMIN_USER_IDS = {str(uid) for uid in raw}
+        return
+
+    if isinstance(raw, dict):
+        ADMIN_USER_IDS = {str(uid) for uid in raw.keys()}
+        return
+
+    raise RuntimeError("plugins/admins.json must contain a JSON object or array of user ids")
+
+
 async def _maybe_await(value):
     if hasattr(value, "__await__"):
         return await value
@@ -162,6 +184,41 @@ def _add_whitelist_entry_locally(name: str) -> None:
         json.dump(raw, f, ensure_ascii=False, indent=2)
 
 
+def _remove_whitelist_entry_locally(name: str) -> bool:
+    whitelist_path = _require_local_whitelist_path(MSMP_WHITELIST_FILE)
+    if whitelist_path.is_file():
+        with whitelist_path.open("r", encoding="utf-8") as f:
+            raw = json.load(f)
+    else:
+        raw = []
+
+    if not isinstance(raw, list):
+        raise RuntimeError("MSMP_WHITELIST_PATH must point to a JSON array file")
+
+    offline_uuid = _construct_offline_player_uuid(name)
+    removed = False
+    new_raw = []
+
+    for entry in raw:
+        if not isinstance(entry, dict):
+            new_raw.append(entry)
+            continue
+
+        existing_name = str(entry.get("name", ""))
+        existing_uuid = str(entry.get("uuid", ""))
+        if existing_name.lower() == name.lower() or existing_uuid == offline_uuid:
+            removed = True
+            continue
+
+        new_raw.append(entry)
+
+    whitelist_path.parent.mkdir(parents=True, exist_ok=True)
+    with whitelist_path.open("w", encoding="utf-8") as f:
+        json.dump(new_raw, f, ensure_ascii=False, indent=2)
+
+    return removed
+
+
 async def _reload_whitelist_via_rcon():
     await _send_rcon_command("whitelist reload")
 
@@ -196,6 +253,16 @@ async def _send_rcon_command(command: str):
         close_func = getattr(client, "close", None)
         if close_func is not None:
             await _maybe_await(close_func())
+
+
+def _format_rcon_response(response: Any) -> str:
+    if isinstance(response, tuple) and response:
+        return str(response[0])
+    return str(response)
+
+
+def _is_admin(event: Event) -> bool:
+    return str(event.user_id) in ADMIN_USER_IDS
 
 
 MSMP_REMOTE_MODE = _config_bool(MSMP_REMOTE_MODE)
@@ -323,7 +390,10 @@ driver = get_driver()
 
 @driver.on_startup
 async def _startup():
+    load_admin_data()
     load_whitelist_data()
+    if ADMIN_USER_IDS:
+        _require_rcon_config(RCON_HOST, RCON_PASSWORD)
     await msmp.start()
     # await msmp.call("minecraft:notification/players/joined")
     # await msmp.call("minecraft:notification/players/left")
@@ -395,6 +465,63 @@ async def _on_left(params):
         await _broadcast_to_allowed(f"【RPC】{name} 离开了游戏")
     
     
+
+# /removewhitelist command
+remove_whitelist_cmd = on_command("removewhitelist", aliases={"unwhitelist", "取消白名单"})
+
+@remove_whitelist_cmd.handle()
+async def _(bot: Bot, event: Event):
+    if not _is_admin(event):
+        await remove_whitelist_cmd.finish("你没有权限使用这个命令。")
+
+    text = event.get_plaintext().strip()
+    parts = text.split(maxsplit=1)
+    if len(parts) < 2:
+        await remove_whitelist_cmd.finish("用法：/removewhitelist <玩家名>")
+
+    name = parts[1].strip()
+    if not name:
+        await remove_whitelist_cmd.finish("用法：/removewhitelist <玩家名>")
+
+    try:
+        if MSMP_REMOTE_MODE:
+            await msmp.call("minecraft:allowlist/remove", {"remove": [{"name": name}]})
+        else:
+            removed = _remove_whitelist_entry_locally(name)
+            if MSMP_LOCAL_RELOAD_VIA_RCON:
+                await _reload_whitelist_via_rcon()
+            if not removed:
+                await remove_whitelist_cmd.finish(f"本地白名单中没有找到 {name}")
+    except Exception as e:
+        await remove_whitelist_cmd.finish(f"移除白名单失败：{e}")
+
+    await remove_whitelist_cmd.finish(f"已为你移除白名单：{name}")
+
+
+# /command command
+admin_command_cmd = on_command("command")
+
+@admin_command_cmd.handle()
+async def _(bot: Bot, event: Event):
+    if not _is_admin(event):
+        await admin_command_cmd.finish("你没有权限使用这个命令。")
+
+    text = event.get_plaintext().strip()
+    parts = text.split(maxsplit=1)
+    if len(parts) < 2:
+        await admin_command_cmd.finish("用法：/command <命令> [参数]")
+
+    command_text = parts[1].strip().lstrip("/")
+    if not command_text:
+        await admin_command_cmd.finish("用法：/command <命令> [参数]")
+
+    try:
+        response = await _send_rcon_command(command_text)
+    except Exception as e:
+        await admin_command_cmd.finish(f"RCON 执行失败：{e}")
+
+    await admin_command_cmd.finish(_format_rcon_response(response))
+
 
 # /msmpstatus command
 msmpstatus_cmd = on_command("msmpstatus")
