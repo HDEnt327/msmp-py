@@ -181,8 +181,17 @@ async def _send_rcon_command(command: str):
     try:
         connect_func = getattr(client, "connect", None) or getattr(client, "setup", None)
         if connect_func is not None:
-            await _call_optional_timeout(connect_func)
-        return await _call_optional_timeout(client.send_cmd, command)
+            try:
+                await _call_optional_timeout(connect_func)
+            except Exception as e:
+                logger.warning(f"RCON connect failed for {host}:{port}: {type(e).__name__}: {e}")
+                raise RuntimeError(f"RCON connect failed for {host}:{port}: {e}") from e
+        response = await _call_optional_timeout(client.send_cmd, command)
+        logger.info(f'RCON command {command!r} responded with {response!r}')
+        return response
+    except Exception as e:
+        logger.warning(f"RCON command {command!r} failed for {host}:{port}: {type(e).__name__}: {e}")
+        raise
     finally:
         close_func = getattr(client, "close", None)
         if close_func is not None:
