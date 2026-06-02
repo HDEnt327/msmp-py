@@ -219,6 +219,17 @@ def _remove_whitelist_entry_locally(name: str) -> bool:
     return removed
 
 
+def _remove_user_whitelist_record(user_id: str, name: str) -> bool:
+    used = USER_WHITELISTS.get(user_id)
+    if not used or name not in used:
+        return False
+
+    used.remove(name)
+    if not used:
+        USER_WHITELISTS.pop(user_id, None)
+    return True
+
+
 async def _reload_whitelist_via_rcon():
     await _send_rcon_command("whitelist reload")
 
@@ -502,6 +513,10 @@ async def _(bot: Bot, event: Event):
                 await _reload_whitelist_via_rcon()
             if not removed:
                 await remove_whitelist_cmd.finish(f"本地白名单中没有找到 {name}")
+
+        quota_removed = _remove_user_whitelist_record(str(event.user_id), name)
+        if quota_removed:
+            save_whitelist_data()
     except Exception as e:
         await remove_whitelist_cmd.finish(f"移除白名单失败：{e}")
 
