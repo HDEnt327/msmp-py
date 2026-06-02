@@ -1,5 +1,5 @@
 # plugins/msmp.py
-import asyncio, hashlib, json, ssl
+import asyncio, hashlib, json, re, ssl
 from typing import Any, Awaitable, Callable, Dict, List
 from nonebot import on_command, get_driver, logger
 from nonebot.adapters.onebot.v11 import Bot, Event
@@ -170,7 +170,7 @@ def _add_whitelist_entry_locally(name: str) -> None:
             continue
         existing_name = str(entry.get("name", ""))
         existing_uuid = str(entry.get("uuid", ""))
-        if existing_name.lower() == name.lower() or existing_uuid == offline_uuid:
+        if existing_name == name or existing_uuid == offline_uuid:
             entry["uuid"] = offline_uuid
             entry["name"] = name
             entry_found = True
@@ -206,7 +206,7 @@ def _remove_whitelist_entry_locally(name: str) -> bool:
 
         existing_name = str(entry.get("name", ""))
         existing_uuid = str(entry.get("uuid", ""))
-        if existing_name.lower() == name.lower() or existing_uuid == offline_uuid:
+        if existing_name == name or existing_uuid == offline_uuid:
             removed = True
             continue
 
@@ -257,8 +257,18 @@ async def _send_rcon_command(command: str):
 
 def _format_rcon_response(response: Any) -> str:
     if isinstance(response, tuple) and response:
-        return str(response[0])
-    return str(response)
+        response = response[0]
+    text = str(response)
+    text = re.sub(r"§.", "", text)
+    return text.strip()
+
+
+def _format_rcon_response(response: Any) -> str:
+    if isinstance(response, tuple) and response:
+        response = response[0]
+    text = str(response)
+    text = re.sub(r"\u00a7.", "", text)
+    return text.strip()
 
 
 def _is_admin(event: Event) -> bool:
@@ -520,7 +530,10 @@ async def _(bot: Bot, event: Event):
     except Exception as e:
         await admin_command_cmd.finish(f"RCON 执行失败：{e}")
 
-    await admin_command_cmd.finish(_format_rcon_response(response))
+    output = _format_rcon_response(response)
+    if not output:
+        output = f"已执行：{command_text}"
+    await admin_command_cmd.finish(output)
 
 
 # /msmpstatus command
