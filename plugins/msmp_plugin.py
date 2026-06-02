@@ -18,7 +18,12 @@ MSMP_SECRET: str | None = getattr(cfg, "msmp_secret", None)
 MSMP_USE_TLS: bool = getattr(cfg, "msmp_use_tls", True)
 MSMP_SSL_PEM: str | None = getattr(cfg, "msmp_ssl_pem", None)
 MSMP_ORIGIN: str | None = getattr(cfg, "msmp_origin", "msmp-py")
+MSMP_LOCAL_RELOAD_VIA_RCON: bool = getattr(cfg, "msmp_local_reload_via_rcon", False)
 MSMP_WHITELIST_PATH: str | None = getattr(cfg, "msmp_whitelist_path", None)
+RCON_HOST: str | None = getattr(cfg, "rcon_host", None)
+RCON_PORT: int = int(getattr(cfg, "rcon_port", 25575))
+RCON_PASSWORD: str | None = getattr(cfg, "rcon_password", None)
+RCON_TIMEOUT: float = float(getattr(cfg, "rcon_timeout", 5.0))
 # Example .env:
 # MSMP_REMOTE_MODE=true
 # MSMP_URI=wss://address:port
@@ -26,7 +31,11 @@ MSMP_WHITELIST_PATH: str | None = getattr(cfg, "msmp_whitelist_path", None)
 # MSMP_USE_TLS=true
 # MSMP_SSL_PEM=server-cert.pem
 # MSMP_ORIGIN=msmp-py
+# MSMP_LOCAL_RELOAD_VIA_RCON=false
 # MSMP_WHITELIST_PATH=C:\path\to\server\whitelist.json
+# RCON_HOST=address
+# RCON_PORT=25575
+# RCON_PASSWORD=YOUR_RCON_PASSWORD
 # MSMP_ALLOWED_GROUPS=["123456789","987654321"]
 _allowed = getattr(cfg, "msmp_allowed_groups", [])
 ALLOWED_GROUPS = {int(x) for x in _allowed} if _allowed else set()
@@ -88,6 +97,27 @@ def _require_local_whitelist_path(path: Path | None) -> Path:
     return path
 
 
+def _require_rcon_config(host: str | None, password: str | None) -> tuple[str, int, str]:
+    if not host:
+        raise RuntimeError("RCON_HOST is required when MSMP_LOCAL_RELOAD_VIA_RCON is enabled")
+    if not password:
+        raise RuntimeError("RCON_PASSWORD is required when MSMP_LOCAL_RELOAD_VIA_RCON is enabled")
+    return host, RCON_PORT, password
+
+
+async def _maybe_await(value):
+    if hasattr(value, "__await__"):
+        return await value
+    return value
+
+
+async def _call_optional_timeout(func, *args):
+    try:
+        return await _maybe_await(func(*args, timeout=RCON_TIMEOUT))
+    except TypeError:
+        return await _maybe_await(func(*args))
+
+
 def _construct_offline_player_uuid(username: str) -> str:
     digest = hashlib.md5(f"OfflinePlayer:{username}".encode("utf-8")).digest()
     uuid_bytes = bytearray(digest)
@@ -132,8 +162,36 @@ def _add_whitelist_entry_locally(name: str) -> None:
         json.dump(raw, f, ensure_ascii=False, indent=2)
 
 
+async def _reload_whitelist_via_rcon():
+    await _send_rcon_command("whitelist reload")
+
+
+async def _send_rcon_command(command: str):
+    try:
+        import aiomcrcon
+    except ImportError as e:
+        raise RuntimeError("aio-mc-rcon is not installed. Run pip install -r requirements.txt") from e
+
+    host, port, password = _require_rcon_config(RCON_HOST, RCON_PASSWORD)
+    try:
+        client = aiomcrcon.Client(host, port, password)
+    except TypeError:
+        client = aiomcrcon.Client(f"{host}:{port}", password)
+
+    try:
+        connect_func = getattr(client, "connect", None) or getattr(client, "setup", None)
+        if connect_func is not None:
+            await _call_optional_timeout(connect_func)
+        return await _call_optional_timeout(client.send_cmd, command)
+    finally:
+        close_func = getattr(client, "close", None)
+        if close_func is not None:
+            await _maybe_await(close_func())
+
+
 MSMP_REMOTE_MODE = _config_bool(MSMP_REMOTE_MODE)
 MSMP_USE_TLS = _config_bool(MSMP_USE_TLS)
+MSMP_LOCAL_RELOAD_VIA_RCON = _config_bool(MSMP_LOCAL_RELOAD_VIA_RCON)
 MSMP_WHITELIST_FILE = _resolve_whitelist_path(MSMP_WHITELIST_PATH)
 
 MSMP_ORIGIN = MSMP_ORIGIN.strip() if MSMP_ORIGIN else None
@@ -142,6 +200,8 @@ MSMP_URI = _normalize_msmp_uri(MSMP_URI, MSMP_USE_TLS)
 sslctx = _build_ssl_context(MSMP_USE_TLS, MSMP_SSL_PEM)
 if not MSMP_REMOTE_MODE:
     _require_local_whitelist_path(MSMP_WHITELIST_FILE)
+if MSMP_LOCAL_RELOAD_VIA_RCON:
+    _require_rcon_config(RCON_HOST, RCON_PASSWORD)
 
 # msmp client
 Json = Dict[str, Any]
@@ -383,6 +443,8 @@ async def _(bot: Bot, event: Event):
             await msmp.call("minecraft:allowlist/add", {"add": [{"name": name}]})
         else:
             _add_whitelist_entry_locally(name)
+            if MSMP_LOCAL_RELOAD_VIA_RCON:
+                await _reload_whitelist_via_rcon()
     except Exception as e:
         await whitelist_cmd.finish(f"添加白名单失败：{e}")
 
